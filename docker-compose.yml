@@ -1,0 +1,213 @@
+version: '3.8'
+
+networks:
+  paxos-network:
+    driver: bridge
+
+volumes:
+  acceptor-data:
+  learner-data:
+
+services:
+  # Acceptor services - A memória persistente do sistema
+  acceptor1:
+    build:
+      context: ./acceptor
+    container_name: acceptor1
+    volumes:
+      - acceptor-data:/data/acceptor1
+    environment:
+      - ACCEPTOR_ID=1
+      - ACCEPTOR_PORT=5001
+      - TOTAL_ACCEPTORS=3
+      - LOG_LEVEL=INFO
+    networks:
+      - paxos-network
+    ports:
+      - "5001:5001"
+
+  acceptor2:
+    build:
+      context: ./acceptor
+    container_name: acceptor2
+    volumes:
+      - acceptor-data:/data/acceptor2
+    environment:
+      - ACCEPTOR_ID=2
+      - ACCEPTOR_PORT=5002
+      - TOTAL_ACCEPTORS=3
+      - LOG_LEVEL=INFO
+    networks:
+      - paxos-network
+    ports:
+      - "5002:5002"
+
+  acceptor3:
+    build:
+      context: ./acceptor
+    container_name: acceptor3
+    volumes:
+      - acceptor-data:/data/acceptor3
+    environment:
+      - ACCEPTOR_ID=3
+      - ACCEPTOR_PORT=5003
+      - TOTAL_ACCEPTORS=3
+      - LOG_LEVEL=INFO
+    networks:
+      - paxos-network
+    ports:
+      - "5003:5003"
+
+  # Proposer services - Propõem valores para consenso
+  proposer1:
+    build:
+      context: ./proposer
+    container_name: proposer1
+    environment:
+      - PROPOSER_ID=1
+      - PROPOSER_PORT=6001
+      - ACCEPTOR_HOSTS=acceptor1:5001,acceptor2:5002,acceptor3:5003
+      - LEARNER_HOSTS=learner1:7001,learner2:7002
+      - HEARTBEAT_INTERVAL=500
+      - LEADER_TIMEOUT=1500
+      - LOG_LEVEL=INFO
+    networks:
+      - paxos-network
+    ports:
+      - "6001:6001"
+    depends_on:
+      - acceptor1
+      - acceptor2
+      - acceptor3
+    command: >
+      sh -c "
+        /app/wait-for-it.sh acceptor1:5001 -t 30 &&
+        /app/wait-for-it.sh acceptor2:5002 -t 30 &&
+        /app/wait-for-it.sh acceptor3:5003 -t 30 &&
+        python -m main"
+    volumes:
+      - ./init-scripts/wait-for-it.sh:/app/wait-for-it.sh
+
+  proposer2:
+    build:
+      context: ./proposer
+    container_name: proposer2
+    environment:
+      - PROPOSER_ID=2
+      - PROPOSER_PORT=6002
+      - ACCEPTOR_HOSTS=acceptor1:5001,acceptor2:5002,acceptor3:5003
+      - LEARNER_HOSTS=learner1:7001,learner2:7002
+      - HEARTBEAT_INTERVAL=500
+      - LEADER_TIMEOUT=1500
+      - LOG_LEVEL=INFO
+    networks:
+      - paxos-network
+    ports:
+      - "6002:6002"
+    depends_on:
+      - acceptor1
+      - acceptor2
+      - acceptor3
+    command: >
+      sh -c "
+        /app/wait-for-it.sh acceptor1:5001 -t 30 &&
+        /app/wait-for-it.sh acceptor2:5002 -t 30 &&
+        /app/wait-for-it.sh acceptor3:5003 -t 30 &&
+        python -m main"
+    volumes:
+      - ./init-scripts/wait-for-it.sh:/app/wait-for-it.sh
+
+  # Learner services - Aprendem e aplicam valores consensuados
+  learner1:
+    build:
+      context: ./learner
+    container_name: learner1
+    volumes:
+      - learner-data:/data/learner1
+    environment:
+      - LEARNER_ID=1
+      - LEARNER_PORT=7001
+      - ACCEPTOR_HOSTS=acceptor1:5001,acceptor2:5002,acceptor3:5003
+      - PROPOSER_HOSTS=proposer1:6001,proposer2:6002
+      - TOTAL_ACCEPTORS=3
+      - QUORUM_SIZE=2
+      - LOG_LEVEL=INFO
+    networks:
+      - paxos-network
+    ports:
+      - "7001:7001"
+    depends_on:
+      - acceptor1
+      - acceptor2
+      - acceptor3
+    command: >
+      sh -c "
+        /app/wait-for-it.sh acceptor1:5001 -t 30 &&
+        /app/wait-for-it.sh acceptor2:5002 -t 30 &&
+        /app/wait-for-it.sh acceptor3:5003 -t 30 &&
+        python -m main"
+    volumes:
+      - learner-data:/data/learner1
+      - ./init-scripts/wait-for-it.sh:/app/wait-for-it.sh
+
+  learner2:
+    build:
+      context: ./learner
+    container_name: learner2
+    volumes:
+      - learner-data:/data/learner2
+    environment:
+      - LEARNER_ID=2
+      - LEARNER_PORT=7002
+      - ACCEPTOR_HOSTS=acceptor1:5001,acceptor2:5002,acceptor3:5003
+      - PROPOSER_HOSTS=proposer1:6001,proposer2:6002
+      - TOTAL_ACCEPTORS=3
+      - QUORUM_SIZE=2
+      - LOG_LEVEL=INFO
+    networks:
+      - paxos-network
+    ports:
+      - "7002:7002"
+    depends_on:
+      - acceptor1
+      - acceptor2
+      - acceptor3
+    command: >
+      sh -c "
+        /app/wait-for-it.sh acceptor1:5001 -t 30 &&
+        /app/wait-for-it.sh acceptor2:5002 -t 30 &&
+        /app/wait-for-it.sh acceptor3:5003 -t 30 &&
+        python -m main"
+    volumes:
+      - learner-data:/data/learner2
+      - ./init-scripts/wait-for-it.sh:/app/wait-for-it.sh
+
+  # Client service - Interface para interagir com o sistema
+  client:
+    build:
+      context: ./client
+    container_name: paxos-client
+    environment:
+      - CLIENT_ID=client1
+      - CLIENT_PORT=8000
+      - PROPOSER_HOSTS=proposer1:6001,proposer2:6002
+      - LEARNER_HOSTS=learner1:7001,learner2:7002
+      - LOG_LEVEL=INFO
+    networks:
+      - paxos-network
+    ports:
+      - "8000:8000"
+    depends_on:
+      - proposer1
+      - proposer2
+      - learner1
+      - learner2
+    command: >
+      sh -c "
+        /app/wait-for-it.sh proposer1:6001 -t 30 &&
+        /app/wait-for-it.sh proposer2:6002 -t 30 &&
+        /app/wait-for-it.sh learner1:7001 -t 30 &&
+        /app/wait-for-it.sh learner2:7002 -t 30 &&
+        python -m main"
+    volumes:
+      - ./init-scripts/wait-for-it.sh:/app/wait-for-it.sh
