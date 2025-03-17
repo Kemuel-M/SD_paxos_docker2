@@ -2,8 +2,12 @@
 # wait-for-it.sh - Wait for a service to be available on a host and port
 # Modified from https://github.com/vishnubob/wait-for-it
 
-TIMEOUT=15
+# Longer default timeout (60 seconds instead of 15)
+TIMEOUT=60
 QUIET=0
+
+# Make sure netcat is installed
+which nc > /dev/null || { echo "Error: netcat (nc) is not installed"; exit 1; }
 
 usage() {
   cat << EOF
@@ -16,19 +20,29 @@ EOF
 }
 
 wait_for() {
+  echo "Waiting for $HOST:$PORT for up to $TIMEOUT seconds..."
+  
   for i in `seq $TIMEOUT` ; do
-    nc -z "$HOST" "$PORT" > /dev/null 2>&1
+    # Attempt connection with 2 second timeout
+    nc -z -w 2 "$HOST" "$PORT" > /dev/null 2>&1
     
     result=$?
     if [ $result -eq 0 ] ; then
+      echo "Service $HOST:$PORT is now available"
       if [ $# -gt 0 ] ; then
         exec "$@"
       fi
       exit 0
     fi
     sleep 1
+    
+    # Print a progress message every 10 seconds
+    if [ $(($i % 10)) -eq 0 ]; then
+      echo "Still waiting for $HOST:$PORT... ($i/$TIMEOUT)"
+    fi
   done
-  echo "Operation timed out" >&2
+  
+  echo "ERROR: Operation timed out waiting for $HOST:$PORT after $TIMEOUT seconds" >&2
   exit 1
 }
 
@@ -55,5 +69,9 @@ if [ "$HOST" = "" -o "$PORT" = "" ]; then
   echo "Error: you need to provide a host and port to test."
   usage
 fi
+
+# Add delay before starting to wait
+echo "Waiting 5 seconds before starting connection tests..."
+sleep 5
 
 wait_for "$@"
